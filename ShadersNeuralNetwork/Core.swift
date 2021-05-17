@@ -8,6 +8,9 @@
 import Foundation
 import MetalPerformanceShaders
 import CoreImage
+import Accelerate
+
+var validConvPadding = MPSNNDefaultPadding(method: .validOnly)
 
 class Layer {
     
@@ -66,23 +69,39 @@ class Dense: Layer {
     }
 }
 
+class Flatten: Layer {
+    let width: Int
+    
+    init(width: Int) {
+        self.width = width
+    }
+}
+
 func createNodes(layers: [Layer], isTraining: Bool, batchSize: Int) -> MPSNNFilterNode? {
     var source = MPSNNImageNode(handle: nil)
     var lastNode: MPSNNFilterNode? = nil
     for layer in layers {
         switch layer {
         case let layer as Convolution:
-            lastNode = MPSCNNConvolutionNode(source: source, weights: layer.dataSource)
+            let conv = MPSCNNConvolutionNode(source: source, weights: layer.dataSource)
+            conv.paddingPolicy = validConvPadding
+            lastNode = conv
         case let layer as Pooling:
             if layer.mode == .max {
-                lastNode = MPSCNNPoolingMaxNode(source: source, filterSize: layer.filterSize, stride: layer.stride)
+                let node = MPSCNNPoolingMaxNode(source: source, filterSize: layer.filterSize, stride: layer.stride)
+                node.paddingPolicy = validConvPadding
+                lastNode = node
             } else {
-                lastNode = MPSCNNPoolingAverageNode(source: source, filterSize: layer.filterSize, stride: layer.stride)
+                let node = MPSCNNPoolingAverageNode(source: source, filterSize: layer.filterSize, stride: layer.stride)
+                node.paddingPolicy = validConvPadding
+                lastNode = node
             }
         case _ as ReLU:
-            lastNode = MPSCNNNeuronReLUNode(source: source)
+            lastNode = MPSCNNNeuronReLUNode(source: source, a: 0.0)
         case _ as Sigmoid:
             lastNode = MPSCNNNeuronSigmoidNode(source: source)
+        case let layer as Flatten:
+            lastNode = MPSNNReshapeNode(source: source, resultWidth: 1, resultHeight: 1, resultFeatureChannels: layer.width)
         case let layer as Dropout:
             if isTraining {
                 lastNode = MPSCNNDropoutNode(source: source, keepProbability: layer.keepProbability)
@@ -96,7 +115,7 @@ func createNodes(layers: [Layer], isTraining: Bool, batchSize: Int) -> MPSNNFilt
     }
     if isTraining {
         let lossDescriptor = MPSCNNLossDescriptor(type: .softMaxCrossEntropy, reductionType: .sum)
-        lossDescriptor.weight = 1.0 / Float(batchSize)
+        lossDescriptor.weight = 1.0// / Float(batchSize)
         return MPSCNNLossNode(source: source, lossDescriptor: lossDescriptor)
     } else {
         return MPSCNNSoftMaxNode(source: source)
@@ -151,7 +170,7 @@ struct NeuralNetwork {
             var val = [Float.zero]
             assert(curr.width * curr.height * curr.featureChannels == 1)
             curr.readBytes(&val, dataLayout: .HeightxWidthxFeatureChannels, imageIndex: 0)
-            ret += Float(val[0]) / Float(batchSize)
+            ret += Float(val[0]) / Float(batch.count)
         }
         return ret
     }
@@ -164,9 +183,6 @@ struct NeuralNetwork {
             
             MPSImageBatchSynchronize(outputBatch, commandBuffer)
             
-            commandBuffer.commit()
-            commandBuffer.waitUntilCompleted()
-            
             let nsOutput = NSArray(array: outputBatch)
             
             commandBuffer.addCompletedHandler() { _ in
@@ -176,6 +192,9 @@ struct NeuralNetwork {
                     }
                 }
             }
+            
+            commandBuffer.commit()
+            commandBuffer.waitUntilCompleted()
         }
     }
     
@@ -193,7 +212,12 @@ struct NeuralNetwork {
     
     
     func encodeInferenceBatchToCommandBuffer(commandBuffer: MTLCommandBuffer, sourceImages: [MPSImage]) -> [MPSImage] {
-        return inferenceGraph.encodeBatch(to: commandBuffer, sourceImages: [sourceImages], sourceStates: nil) ?? []
+        guard let returnImage = inferenceGraph.encodeBatch(to: commandBuffer, sourceImages: [sourceImages], sourceStates: nil, intermediateImages: nil, destinationStates: nil) else {
+            print("Unable to encode inference batch to command buffer.")
+            return []
+        }
+        
+        return returnImage
     }
     
     private func trainIteration(iteration: Int, numberOfIterations: Int, dataset: Dataset) -> MTLCommandBuffer {
@@ -221,8 +245,8 @@ struct NeuralNetwork {
                 doubleBufferingSemaphore.signal()
                 
                 let trainingLoss = lossReduceSumAcrossBatch(batch: outputBatch)
-                print("Iteration \(iteration+1)/\(numberOfIterations) , Training loss = \(trainingLoss) \r")
-                fflush(__stdoutp)
+                print(" Iteration \(iteration+1)/\(numberOfIterations), Training loss = \(trainingLoss)\r", terminator: "")
+                fflush(stdout)
                 
                 let err = commandBuffer.error
                 if err != nil {
@@ -253,7 +277,7 @@ struct NeuralNetwork {
         
         let size = image.width * image.height * image.featureChannels
         
-        var vals = Array(repeating: Float32.zero, count: size)
+        var vals = Array(repeating: Float32(-22), count: size)
         
         var index = -1, maxV = Float32(-100)
         
@@ -277,10 +301,9 @@ struct NeuralNetwork {
     func evaluate(dataset: Dataset) {
         autoreleasepool(invoking: {
             var gCorrect = 0
+            var gDone = 0
             
             inferenceGraph.reloadFromDataSources()
-            
-            let inputDescriptor = MPSImageDescriptor(channelFormat: .unorm8, width: Int(dataset.imageSize.width), height: Int(dataset.imageSize.height), featureChannels: 1, numberOfImages: 1, usage: .shaderRead)
             
             var latestCommandBuffer: MPSCommandBuffer? = nil
             
@@ -289,40 +312,32 @@ struct NeuralNetwork {
                 autoreleasepool(invoking: {
                     doubleBufferingSemaphore.wait()
                     
-                    var sample = dataset.samples[imageIdx]
-                    
                     var inputBatch = [MPSImage]()
-                    for _ in 0..<batchSize {
-                        let inputImage = MPSImage(device: device, imageDescriptor: inputDescriptor)
+                    for i in 0..<min(batchSize, dataset.samples.count-imageIdx) {
+                        let inputImage = MPSImage(texture: dataset.samples[imageIdx+i].texture, featureChannels: 1)
                         inputBatch.append(inputImage)
                     }
                     
                     let commandBuffer = MPSCommandBuffer(from: commandQueue)
                     
-                    let nsInput = NSArray(array: inputBatch)
-                    
-                    nsInput.enumerateObjects() { inputImage, idx, stop in
-                        if let inputImage = inputImage as? MPSImage {
-                            inputImage.writeBytes(&sample.image, dataLayout: .HeightxWidthxFeatureChannels, imageIndex: 0)
-                        }
-                    }
-                    
-                    inputBatch = Array(_immutableCocoaArray: nsInput)
-                    
                     let outputBatch = encodeInferenceBatchToCommandBuffer(commandBuffer: commandBuffer, sourceImages: inputBatch)
                     
                     MPSImageBatchSynchronize(outputBatch, commandBuffer)
                     
-                    let nsOutput = NSArray(array: outputBatch)
+                    var labels = [Int]()
+                    
+                    for i in 0..<min(batchSize, dataset.samples.count-imageIdx) {
+                        labels.append(dataset.samples[imageIdx+i].label)
+                    }
                     
                     commandBuffer.addCompletedHandler() { _ in
                         doubleBufferingSemaphore.signal()
-                        
-                        nsOutput.enumerateObjects() { outputImage, idx, stop in
+                        NSArray(array: outputBatch).enumerateObjects() { outputImage, idx, stop in
                             if let outputImage = outputImage as? MPSImage {
-                                if checkLabel(image: outputImage, label: sample.label) {
+                                if checkLabel(image: outputImage, label: labels[idx]) {
                                     gCorrect += 1
                                 }
+                                gDone += 1
                             }
                         }
                     }
@@ -335,17 +350,16 @@ struct NeuralNetwork {
             }
             
             latestCommandBuffer?.waitUntilCompleted()
-            print("Test Set Accuracy = \(Float(gCorrect) / (Float(dataset.samples.count) * 100.0 )) %")
+            print("Test Set Accuracy = \(Float(gCorrect) / Float(gDone) * 100.0) %")
         })
     }
 
     func train(trainSet: Dataset, evaluationSet: Dataset) {
         // Use double buffering to keep the gpu completely busy.
-        var latestCommandBuffer: MTLCommandBuffer? = nil
+        evaluate(dataset: evaluationSet)
         for i in 0..<epochs {
             autoreleasepool(invoking: {
-                latestCommandBuffer = trainEpoch(dataset: trainSet)
-                latestCommandBuffer?.waitUntilCompleted()
+                trainEpoch(dataset: trainSet).waitUntilCompleted()
                 evaluate(dataset: evaluationSet)
             })
         }
@@ -360,27 +374,41 @@ struct NeuralNetwork {
 extension CGImage {
     
     var texture: MTLTexture {
-        let descriptor = MTLTextureDescriptor()
-        descriptor.width = width
-        descriptor.height = height
-        descriptor.pixelFormat = .r8Unorm
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .r8Unorm, width: width, height: height, mipmapped: false)
         
         let device = MTLCreateSystemDefaultDevice()!
         
         let texture = device.makeTexture(descriptor: descriptor)!
         let region = MTLRegion(origin: .init(x: 0, y: 0, z: 0), size: .init(width: width, height: height, depth: 1))
         
-        let dstData = dataProvider?.data
-        let pixelData = CFDataGetBytePtr(dstData!)!
+        guard let colorSpace = colorSpace else {
+            fatalError()
+        }
         
-        texture.replace(region: region, mipmapLevel: 0, withBytes: pixelData, bytesPerRow: 4*width)
-        
-        return texture
+        var format = vImage_CGImageFormat(bitsPerComponent: UInt32(bitsPerComponent), bitsPerPixel: UInt32(bitsPerPixel), colorSpace: Unmanaged.passRetained(colorSpace), bitmapInfo: .init(rawValue: CGImageAlphaInfo.none.rawValue), version: 0, decode: nil, renderingIntent: .defaultIntent)
+        do {
+            var sourceBuffer = try vImage_Buffer(cgImage: self, format: format)
+            var error = vImage_Error()
+            let destImage = vImageCreateCGImageFromBuffer(&sourceBuffer, &format, nil, nil, numericCast(kvImageNoFlags), &error).takeRetainedValue()
+            
+            guard error == noErr else {
+                fatalError()
+            }
+            
+            let dstData = destImage.dataProvider?.data
+            let pixelData = CFDataGetBytePtr(dstData!)
+            
+            texture.replace(region: region, mipmapLevel: 0, withBytes: pixelData!, bytesPerRow: bytesPerRow)
+            
+            return texture
+        } catch {
+            fatalError(error.localizedDescription)
+        }
     }
     
     var grayscale: CGImage {
         let imageRect:CGRect = CGRect(x:0, y:0, width: self.width, height: self.height)
-        let colorSpace = CGColorSpaceCreateDeviceGray()
+        let colorSpace = CGColorSpace(name: CGColorSpace.linearGray)!
         let width = self.width
         let height = self.height
         let bitmapInfo = CGBitmapInfo(rawValue: CGImageAlphaInfo.none.rawValue)
@@ -405,6 +433,13 @@ extension CIImage {
     var convertedCGImage: CGImage? {
         let context = CIContext(options: nil)
         return context.createCGImage(self, from: self.extent)
+    }
+    
+    var inverted: CIImage {
+        let filter = CIFilter(name: "CIColorInvert")!
+        filter.setValue(self, forKey: kCIInputImageKey)
+        
+        return filter.outputImage ?? self
     }
     
     func resize(targetSize: CGSize) -> CIImage {

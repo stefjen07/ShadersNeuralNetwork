@@ -66,7 +66,6 @@ class ConvDataSource: NSObject, MPSCNNConvolutionDataSource {
     
     func update(with commandBuffer: MTLCommandBuffer, gradientState: MPSCNNConvolutionGradientState, sourceState: MPSCNNConvolutionWeightsAndBiasesState) -> MPSCNNConvolutionWeightsAndBiasesState? {
         t+=1
-        updater.setLearningRate(learningRate)
         updater.encode(commandBuffer: commandBuffer, convolutionGradientState: gradientState, convolutionSourceState: sourceState, inputMomentumVectors: [weightsMomentumVector, biasMomentumVector], inputVelocityVectors: [weightsVelocityVector, biasVelocityVector], resultState: convWeightsAndBiases)
         //assert(t == updater.timeStep)
         return convWeightsAndBiases
@@ -91,10 +90,10 @@ class ConvDataSource: NSObject, MPSCNNConvolutionDataSource {
         
         let optimizerDescriptor = MPSNNOptimizerDescriptor(learningRate: learningRate, gradientRescale: 1.0, regularizationType: .None, regularizationScale: 1.0)
         
-        updater = MPSNNOptimizerAdam(device: device, learningRate: learningRate)
-        //updater = MPSNNOptimizerAdam(device: device, beta1: beta1, beta2: beta2, epsilon: epsilon, timeStep: 0, optimizerDescriptor: optimizerDescriptor)
+        //updater = MPSNNOptimizerAdam(device: device, learningRate: learningRate)
+        updater = MPSNNOptimizerAdam(device: device, beta1: beta1, beta2: beta2, epsilon: epsilon, timeStep: 0, optimizerDescriptor: optimizerDescriptor)
         
-        let randomDescriptor = MPSMatrixRandomDistributionDescriptor.uniformDistributionDescriptor(withMinimum: -0.2, maximum: 0.2)
+        let randomDescriptor = MPSMatrixRandomDistributionDescriptor.uniformDistributionDescriptor(withMinimum: -0.5, maximum: 0.5)
         let randomKernel = MPSMatrixRandomMTGP32(device: device, destinationDataType: .float32, seed: 0, distributionDescriptor: randomDescriptor)
         
         let lenWeights = inputFeatureChannels * kernelHeight * kernelWidth * outputFeatureChannnels
@@ -105,8 +104,8 @@ class ConvDataSource: NSObject, MPSCNNConvolutionDataSource {
         let sizeBiases = outputFeatureChannnels * MemoryLayout<Float32>.size
         
         var zero = Float.zero, biasInit = Float(0.1)
-        let zeroPointer: UnsafeMutablePointer = UnsafeMutableRawPointer(&zero).assumingMemoryBound(to: UInt8.self),
-            biasInitPointer = UnsafeMutableRawPointer(&biasInit).assumingMemoryBound(to: UInt8.self)
+        //let &zero: UnsafeMutablePointer = UnsafeMutableRawPointer(&zero).assumingMemoryBound(to: UInt8.self),
+            //biasInitPointer = UnsafeMutableRawPointer(&biasInit).assumingMemoryBound(to: UInt8.self)
         
         weightsVector = MPSVector(device: device, descriptor: vDescWeights)
         weightsVelocityVector = MPSVector(device: device, descriptor: vDescWeights)
@@ -115,8 +114,8 @@ class ConvDataSource: NSObject, MPSCNNConvolutionDataSource {
         let weightsVelocityPointer = weightsVelocityVector.data.contents().assumingMemoryBound(to: Float.self)
         let weightsMomentumPointer = weightsMomentumVector.data.contents().assumingMemoryBound(to: Float.self)
         
-        memset_pattern4(weightsVelocityPointer, zeroPointer, sizeWeights)
-        memset_pattern4(weightsMomentumPointer, zeroPointer, sizeWeights)
+        memset_pattern4(weightsVelocityPointer, &zero, sizeWeights)
+        memset_pattern4(weightsMomentumPointer, &zero, sizeWeights)
         
         biasVector = MPSVector(device: device, descriptor: vDescBiases)
         biasVelocityVector = MPSVector(device: device, descriptor: vDescBiases)
@@ -127,9 +126,9 @@ class ConvDataSource: NSObject, MPSCNNConvolutionDataSource {
         
         
         
-        memset_pattern4(biasPointer, biasInitPointer, sizeBiases)
-        memset_pattern4(biasVelocityPointer, zeroPointer, sizeBiases)
-        memset_pattern4(biasMomentumPointer, zeroPointer, sizeBiases)
+        memset_pattern4(biasPointer, &biasInit, sizeBiases)
+        memset_pattern4(biasVelocityPointer, &zero, sizeBiases)
+        memset_pattern4(biasMomentumPointer, &zero, sizeBiases)
         
         convWeightsAndBiases = .init(weights: weightsVector.data, biases: biasVector.data)
         

@@ -88,7 +88,7 @@ struct Dataset: Codable {
                     let subfolderContents = try fm.contentsOfDirectory(atPath: subfolderPath)
                     for file in subfolderContents {
                         let fileUrl = URL(fileURLWithPath: subfolderPath).appendingPathComponent(file)
-                        if let cgImage = CIImage(contentsOf: fileUrl)?.resize(targetSize: imageSize).convertedCGImage?.grayscale {
+                        if let cgImage = CIImage(contentsOf: fileUrl)?.resize(targetSize: imageSize).inverted.convertedCGImage?.grayscale {
                             let sample = DataSample(device: device, image: cgImage, label: currentLabel)
                             samples.append(sample)
                         }
