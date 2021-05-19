@@ -11,6 +11,7 @@ import CoreImage
 import Accelerate
 
 var validConvPadding = MPSNNDefaultPadding(method: .validOnly)
+var sameConvPadding = MPSNNDefaultPadding(method: .sizeSame)
 
 class Layer {
     
@@ -18,11 +19,18 @@ class Layer {
 
 var num = 0
 
+enum Padding {
+    case same
+    case valid
+}
+
 class Convolution: Layer {
     let dataSource: ConvDataSource
+    let padding: Padding
     
-    init(device: MTLDevice, commandQueue: MTLCommandQueue, kernelSize: CGSize, inputFC: Int, outputFC: Int, stride: Int, learningRate: Float) {
+    init(device: MTLDevice, commandQueue: MTLCommandQueue, kernelSize: CGSize, inputFC: Int, outputFC: Int, stride: Int, learningRate: Float, padding: Padding) {
         dataSource = .init(device: device, kernelWidth: Int(kernelSize.width), kernelHeight: Int(kernelSize.height), inputFeatureChannels: inputFC, outputFeatureChannnels: outputFC, stride: stride, learningRate: learningRate, commandQueue: commandQueue, num: num)
+        self.padding = padding
         num += 1
     }
 }
@@ -36,11 +44,13 @@ class Pooling: Layer {
     let mode: PoolingMode
     let filterSize: Int
     let stride: Int
+    let padding: Padding
     
-    init(mode: PoolingMode, filterSize: Int, stride: Int) {
+    init(mode: PoolingMode, filterSize: Int, stride: Int, padding: Padding) {
         self.mode = mode
         self.filterSize = filterSize
         self.stride = stride
+        self.padding = padding
     }
 }
 
@@ -77,23 +87,35 @@ class Flatten: Layer {
     }
 }
 
-func createNodes(layers: [Layer], isTraining: Bool, batchSize: Int) -> MPSNNFilterNode? {
+func createNodes(layers: UnsafeMutablePointer<[Layer]>, isTraining: Bool, batchSize: Int, numberOfClasses: Int) -> MPSNNFilterNode? {
     var source = MPSNNImageNode(handle: nil)
     var lastNode: MPSNNFilterNode? = nil
-    for layer in layers {
+    for layer in layers.pointee {
         switch layer {
         case let layer as Convolution:
             let conv = MPSCNNConvolutionNode(source: source, weights: layer.dataSource)
-            conv.paddingPolicy = validConvPadding
+            if layer.padding == .valid {
+                conv.paddingPolicy = validConvPadding
+            } else {
+                conv.paddingPolicy = sameConvPadding
+            }
             lastNode = conv
         case let layer as Pooling:
             if layer.mode == .max {
                 let node = MPSCNNPoolingMaxNode(source: source, filterSize: layer.filterSize, stride: layer.stride)
-                node.paddingPolicy = validConvPadding
+                if layer.padding == .valid {
+                    node.paddingPolicy = validConvPadding
+                } else {
+                    node.paddingPolicy = sameConvPadding
+                }
                 lastNode = node
             } else {
                 let node = MPSCNNPoolingAverageNode(source: source, filterSize: layer.filterSize, stride: layer.stride)
-                node.paddingPolicy = validConvPadding
+                if layer.padding == .valid {
+                    node.paddingPolicy = validConvPadding
+                } else {
+                    node.paddingPolicy = sameConvPadding
+                }
                 lastNode = node
             }
         case _ as ReLU:
@@ -115,7 +137,8 @@ func createNodes(layers: [Layer], isTraining: Bool, batchSize: Int) -> MPSNNFilt
     }
     if isTraining {
         let lossDescriptor = MPSCNNLossDescriptor(type: .softMaxCrossEntropy, reductionType: .sum)
-        lossDescriptor.weight = 1.0// / Float(batchSize)
+        lossDescriptor.numberOfClasses = numberOfClasses
+        lossDescriptor.weight = 1.0 / Float(batchSize)
         return MPSCNNLossNode(source: source, lossDescriptor: lossDescriptor)
     } else {
         return MPSCNNSoftMaxNode(source: source)
@@ -131,13 +154,13 @@ struct NeuralNetwork {
     private let trainingGraph: MPSNNGraph
     private let inferenceGraph: MPSNNGraph
     
-    init(device: MTLDevice, commandQueue: MTLCommandQueue, layers: [Layer], epochs: Int, batchSize: Int) {
+    init(device: MTLDevice, commandQueue: MTLCommandQueue, layers: UnsafeMutablePointer<[Layer]>, epochs: Int, batchSize: Int, numberOfClasses: Int) {
         self.device = device
         self.commandQueue = commandQueue
         self.epochs = epochs
         self.batchSize = batchSize
         
-        guard let finalNode = createNodes(layers: layers, isTraining: true, batchSize: batchSize) else {
+        guard let finalNode = createNodes(layers: layers, isTraining: true, batchSize: batchSize, numberOfClasses: numberOfClasses) else {
             fatalError("Unable to get final node of model.")
         }
         
@@ -156,20 +179,21 @@ struct NeuralNetwork {
             fatalError("Unable to get training graph.")
         }
         
-        guard let finalNode = createNodes(layers: layers, isTraining: false, batchSize: batchSize) else {
+        guard let finalNode = createNodes(layers: layers, isTraining: false, batchSize: batchSize, numberOfClasses: numberOfClasses) else {
             fatalError("Unable to get final node of model.")
         }
-        inferenceGraph = MPSNNGraph(device: device, resultImage: finalNode.resultImage, resultImageIsNeeded: true) ?? MPSNNGraph()
+        guard let graph = MPSNNGraph(device: device, resultImage: finalNode.resultImage, resultImageIsNeeded: true) else {
+            fatalError()
+        }
+        inferenceGraph = graph
         inferenceGraph.format = .float32
     }
     
     func lossReduceSumAcrossBatch(batch: [MPSImage]) -> Float {
         var ret = Float.zero
         for i in 0..<batch.count {
-            let curr = batch[i]
             var val = [Float.zero]
-            assert(curr.width * curr.height * curr.featureChannels == 1)
-            curr.readBytes(&val, dataLayout: .HeightxWidthxFeatureChannels, imageIndex: 0)
+            batch[i].readBytes(&val, dataLayout: .HeightxWidthxFeatureChannels, imageIndex: 0)
             ret += Float(val[0]) / Float(batch.count)
         }
         return ret
@@ -332,13 +356,11 @@ struct NeuralNetwork {
                     
                     commandBuffer.addCompletedHandler() { _ in
                         doubleBufferingSemaphore.signal()
-                        NSArray(array: outputBatch).enumerateObjects() { outputImage, idx, stop in
-                            if let outputImage = outputImage as? MPSImage {
-                                if checkLabel(image: outputImage, label: labels[idx]) {
-                                    gCorrect += 1
-                                }
-                                gDone += 1
+                        for item in outputBatch.enumerated() {
+                            if checkLabel(image: item.element, label: labels[item.offset]) {
+                                gCorrect += 1
                             }
+                            gDone += 1
                         }
                     }
                     

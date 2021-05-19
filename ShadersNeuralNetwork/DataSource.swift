@@ -93,9 +93,6 @@ class ConvDataSource: NSObject, MPSCNNConvolutionDataSource {
         //updater = MPSNNOptimizerAdam(device: device, learningRate: learningRate)
         updater = MPSNNOptimizerAdam(device: device, beta1: beta1, beta2: beta2, epsilon: epsilon, timeStep: 0, optimizerDescriptor: optimizerDescriptor)
         
-        let randomDescriptor = MPSMatrixRandomDistributionDescriptor.uniformDistributionDescriptor(withMinimum: -0.5, maximum: 0.5)
-        let randomKernel = MPSMatrixRandomMTGP32(device: device, destinationDataType: .float32, seed: 0, distributionDescriptor: randomDescriptor)
-        
         let lenWeights = inputFeatureChannels * kernelHeight * kernelWidth * outputFeatureChannnels
         let sizeWeights = lenWeights * MemoryLayout<Float32>.size
         let vDescWeights = MPSVectorDescriptor(length: lenWeights, dataType: .float32)
@@ -104,15 +101,13 @@ class ConvDataSource: NSObject, MPSCNNConvolutionDataSource {
         let sizeBiases = outputFeatureChannnels * MemoryLayout<Float32>.size
         
         var zero = Float.zero, biasInit = Float(0.1)
-        //let &zero: UnsafeMutablePointer = UnsafeMutableRawPointer(&zero).assumingMemoryBound(to: UInt8.self),
-            //biasInitPointer = UnsafeMutableRawPointer(&biasInit).assumingMemoryBound(to: UInt8.self)
         
         weightsVector = MPSVector(device: device, descriptor: vDescWeights)
         weightsVelocityVector = MPSVector(device: device, descriptor: vDescWeights)
         weightsMomentumVector = MPSVector(device: device, descriptor: vDescWeights)
         weightsPointer = weightsVector.data.contents()
-        let weightsVelocityPointer = weightsVelocityVector.data.contents().assumingMemoryBound(to: Float.self)
-        let weightsMomentumPointer = weightsMomentumVector.data.contents().assumingMemoryBound(to: Float.self)
+        let weightsVelocityPointer = weightsVelocityVector.data.contents()
+        let weightsMomentumPointer = weightsMomentumVector.data.contents()
         
         memset_pattern4(weightsVelocityPointer, &zero, sizeWeights)
         memset_pattern4(weightsMomentumPointer, &zero, sizeWeights)
@@ -121,10 +116,8 @@ class ConvDataSource: NSObject, MPSCNNConvolutionDataSource {
         biasVelocityVector = MPSVector(device: device, descriptor: vDescBiases)
         biasMomentumVector = MPSVector(device: device, descriptor: vDescBiases)
         biasPointer = biasVector.data.contents().assumingMemoryBound(to: Float.self)
-        let biasVelocityPointer = biasVelocityVector.data.contents().assumingMemoryBound(to: Float.self)
-        let biasMomentumPointer = biasMomentumVector.data.contents().assumingMemoryBound(to: Float.self)
-        
-        
+        let biasVelocityPointer = biasVelocityVector.data.contents()
+        let biasMomentumPointer = biasMomentumVector.data.contents()
         
         memset_pattern4(biasPointer, &biasInit, sizeBiases)
         memset_pattern4(biasVelocityPointer, &zero, sizeBiases)
@@ -133,7 +126,11 @@ class ConvDataSource: NSObject, MPSCNNConvolutionDataSource {
         convWeightsAndBiases = .init(weights: weightsVector.data, biases: biasVector.data)
         
         let commandBuffer = MPSCommandBuffer(from: commandQueue)
+        
+        let randomDescriptor = MPSMatrixRandomDistributionDescriptor.uniformDistributionDescriptor(withMinimum: -0.2, maximum: 0.2)
+        let randomKernel = MPSMatrixRandomMTGP32(device: device, destinationDataType: .float32, seed: 0, distributionDescriptor: randomDescriptor)
         randomKernel.encode(commandBuffer: commandBuffer, destinationVector: weightsVector)
+        
         commandBuffer.commit()
         commandBuffer.waitUntilCompleted()
         

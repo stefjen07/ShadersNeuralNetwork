@@ -103,18 +103,27 @@ struct Dataset: Codable {
     
     func breakInto(trainSet: UnsafeMutablePointer<Dataset>, evaluationSet: UnsafeMutablePointer<Dataset>, evaluationPart: Float) {
         let shuffled = samples.shuffled()
-        let testSize = Int(Float(shuffled.count) * evaluationPart)
         trainSet.pointee.classLabels = classLabels
         trainSet.pointee.imageSize = imageSize
         trainSet.pointee.samples = []
         evaluationSet.pointee.classLabels = classLabels
         evaluationSet.pointee.imageSize = imageSize
         evaluationSet.pointee.samples = []
-        for i in 0..<testSize {
-            evaluationSet.pointee.samples.append(shuffled[i])
-        }
-        for i in testSize..<shuffled.count {
-            trainSet.pointee.samples.append(shuffled[i])
+        let samplesByClasses = Dictionary(grouping: shuffled, by: {
+            $0.label
+        })
+        for i in 0..<classLabels.count {
+            guard let classSamples = samplesByClasses[i] else {
+                continue
+            }
+            let evaluationCount = Int(evaluationPart * Float(classSamples.count))
+            for j in 0..<classSamples.count {
+                if(j<evaluationCount) {
+                    evaluationSet.pointee.samples.append(classSamples[j])
+                } else {
+                    trainSet.pointee.samples.append(classSamples[j])
+                }
+            }
         }
     }
     
