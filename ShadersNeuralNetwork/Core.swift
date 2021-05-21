@@ -134,10 +134,11 @@ func createNodes(layers: UnsafeMutablePointer<[Layer]>, isTraining: Bool, batchS
             break
         }
         source = lastNode!.resultImage
+        source.format = .float32
     }
     if isTraining {
-        let lossDescriptor = MPSCNNLossDescriptor(type: .softMaxCrossEntropy, reductionType: .sum)
-        lossDescriptor.numberOfClasses = numberOfClasses
+        let lossDescriptor = MPSCNNLossDescriptor(type: .softMaxCrossEntropy, reductionType: .mean)
+        //lossDescriptor.numberOfClasses = numberOfClasses
         lossDescriptor.weight = 1.0 / Float(batchSize)
         return MPSCNNLossNode(source: source, lossDescriptor: lossDescriptor)
     } else {
@@ -248,9 +249,6 @@ struct NeuralNetwork {
         autoreleasepool(invoking: {
             doubleBufferingSemaphore.wait()
             
-            var datasetCopy = dataset
-            datasetCopy.shuffle()
-            
             var lossStateBatch: [MPSCNNLossLabels] = []
             
             let commandBuffer = MPSCommandBuffer(from: commandQueue)
@@ -296,30 +294,49 @@ struct NeuralNetwork {
         return latestCommandBuffer!
     }
     
-    func checkLabel(image: MPSImage, label: Int) -> Bool {
-        assert(image.numberOfImages == 1)
+    func predict(samples: [DataSample]) -> [Int] {
+        var inputBatch = [MPSImage]()
+        for sample in samples {
+            inputBatch.append(sample.getMPSImage(device: device))
+        }
         
-        let size = image.width * image.height * image.featureChannels
+        let commandBuffer = MPSCommandBuffer(from: commandQueue)
         
-        var vals = Array(repeating: Float32(-22), count: size)
+        let outputBatch = encodeInferenceBatchToCommandBuffer(commandBuffer: commandBuffer, sourceImages: inputBatch)
         
-        var index = -1, maxV = Float32(-100)
+        MPSImageBatchSynchronize(outputBatch, commandBuffer)
         
-        image.readBytes(&vals, dataLayout: .featureChannelsxHeightxWidth, imageIndex: 0)
+        var anses = [Int]()
         
-        for i in 0..<image.featureChannels {
-            for j in 0..<image.height {
-                for k in 0..<image.width {
-                    let val = vals[(i*image.height + j) * image.width + k]
-                    if val > maxV {
-                        maxV = val
-                        index = (i*image.height + j) * image.width + k
+        commandBuffer.addCompletedHandler() { _ in
+            doubleBufferingSemaphore.signal()
+            for item in outputBatch.enumerated() {
+                let image = item.element
+                let size = image.width * image.height * image.featureChannels
+                
+                var vals = Array(repeating: Float32(-22), count: size)
+                var index = -1, maxV = Float32(-100)
+                
+                image.readBytes(&vals, dataLayout: .featureChannelsxHeightxWidth, imageIndex: 0)
+                
+                for i in 0..<image.featureChannels {
+                    for j in 0..<image.height {
+                        for k in 0..<image.width {
+                            let val = vals[(i*image.height + j) * image.width + k]
+                            if val > maxV {
+                                maxV = val
+                                index = (i*image.height + j) * image.width + k
+                            }
+                        }
                     }
                 }
+                anses.append(index)
             }
         }
         
-        return index == label
+        commandBuffer.commit()
+        commandBuffer.waitUntilCompleted()
+        return anses
     }
 
     func evaluate(dataset: Dataset) {
@@ -329,49 +346,32 @@ struct NeuralNetwork {
             
             inferenceGraph.reloadFromDataSources()
             
-            var latestCommandBuffer: MPSCommandBuffer? = nil
-            
             var imageIdx = 0
             while imageIdx < dataset.samples.count {
                 autoreleasepool(invoking: {
                     doubleBufferingSemaphore.wait()
                     
-                    var inputBatch = [MPSImage]()
-                    for i in 0..<min(batchSize, dataset.samples.count-imageIdx) {
-                        let inputImage = MPSImage(texture: dataset.samples[imageIdx+i].texture, featureChannels: 1)
-                        inputBatch.append(inputImage)
-                    }
-                    
-                    let commandBuffer = MPSCommandBuffer(from: commandQueue)
-                    
-                    let outputBatch = encodeInferenceBatchToCommandBuffer(commandBuffer: commandBuffer, sourceImages: inputBatch)
-                    
-                    MPSImageBatchSynchronize(outputBatch, commandBuffer)
-                    
+                    var inputBatch = [DataSample]()
                     var labels = [Int]()
-                    
                     for i in 0..<min(batchSize, dataset.samples.count-imageIdx) {
-                        labels.append(dataset.samples[imageIdx+i].label)
+                        inputBatch.append(dataset.samples[i+imageIdx])
+                        labels.append(dataset.samples[i+imageIdx].label)
                     }
                     
-                    commandBuffer.addCompletedHandler() { _ in
-                        doubleBufferingSemaphore.signal()
-                        for item in outputBatch.enumerated() {
-                            if checkLabel(image: item.element, label: labels[item.offset]) {
-                                gCorrect += 1
-                            }
-                            gDone += 1
+                    let predictions = predict(samples: inputBatch)
+                    
+                    for i in 0..<predictions.count {
+                        //print("\(labels[i]) \(predictions[i])")
+                        if labels[i] == predictions[i] {
+                            gCorrect += 1
                         }
+                        gDone += 1
                     }
-                    
-                    commandBuffer.commit()
-                    latestCommandBuffer = commandBuffer
                     
                     imageIdx += batchSize
                 })
             }
             
-            latestCommandBuffer?.waitUntilCompleted()
             print("Test Set Accuracy = \(Float(gCorrect) / Float(gDone) * 100.0) %")
         })
     }
@@ -403,11 +403,7 @@ extension CGImage {
         let texture = device.makeTexture(descriptor: descriptor)!
         let region = MTLRegion(origin: .init(x: 0, y: 0, z: 0), size: .init(width: width, height: height, depth: 1))
         
-        guard let colorSpace = colorSpace else {
-            fatalError()
-        }
-        
-        var format = vImage_CGImageFormat(bitsPerComponent: UInt32(bitsPerComponent), bitsPerPixel: UInt32(bitsPerPixel), colorSpace: Unmanaged.passRetained(colorSpace), bitmapInfo: .init(rawValue: CGImageAlphaInfo.none.rawValue), version: 0, decode: nil, renderingIntent: .defaultIntent)
+        var format = vImage_CGImageFormat(bitsPerComponent: UInt32(8), bitsPerPixel: UInt32(8), colorSpace: Unmanaged.passRetained(CGColorSpace(name: CGColorSpace.linearGray)!), bitmapInfo: .init(rawValue: CGImageAlphaInfo.none.rawValue), version: 0, decode: nil, renderingIntent: .defaultIntent)
         do {
             var sourceBuffer = try vImage_Buffer(cgImage: self, format: format)
             var error = vImage_Error()
@@ -428,11 +424,11 @@ extension CGImage {
         }
     }
     
-    var grayscale: CGImage {
-        let imageRect:CGRect = CGRect(x:0, y:0, width: self.width, height: self.height)
+    func grayscale(size: CGSize) -> CGImage {
+        let imageRect:CGRect = CGRect(origin: .zero, size: size)
         let colorSpace = CGColorSpace(name: CGColorSpace.linearGray)!
-        let width = self.width
-        let height = self.height
+        let width = size.width
+        let height = size.height
         let bitmapInfo = CGBitmapInfo(rawValue: CGImageAlphaInfo.none.rawValue)
         let context = CGContext(data: nil, width: Int(width), height: Int(height), bitsPerComponent: 8, bytesPerRow: 0, space: colorSpace, bitmapInfo: bitmapInfo.rawValue)
         context?.draw(self, in: imageRect)

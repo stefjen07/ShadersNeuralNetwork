@@ -9,9 +9,10 @@ import Foundation
 import MetalPerformanceShaders
 import CoreImage
 
-let learningRate: Float = 0.001
+let learningRate: Float = 1e-4
 
-performHiragana(learningRate: learningRate)
+//performNPL(learningRate: learningRate)
+performHiragana(learningRate: learningRate, firstTime: false)
 //performMNIST(learningRate: learningRate)
 
 extension CIImage {

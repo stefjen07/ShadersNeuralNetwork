@@ -11,11 +11,12 @@ import CoreImage
 
 func cook(device: MTLDevice) {
     let currentUrl = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-    let dataset = Dataset(device: device, folderUrl: currentUrl.appendingPathComponent("Set"), imageSize: CGSize(width: 32, height: 32))
+    var dataset = Dataset(device: device, folderUrl: currentUrl.appendingPathComponent("Set"), imageSize: CGSize(width: 32, height: 32))
+    dataset.updateImageSize()
     do {
         try dataset.save(to: currentUrl.appendingPathComponent("set.ds"))
     } catch {
-        
+        fatalError("Error")
     }
 }
 
@@ -95,15 +96,16 @@ class MNISTDataset {
         return (imageData.count - imagePrefixLength) / (28 * 28)
     }
     
-    func fillSet(device: MTLDevice) {
+    func fillSet() {
         var start = 0
         var end = 0
         for index in 0..<count {
             start = imagePrefixLength + index * 28 * 28
             end = start + 28*28
             let label = Int(labelData[labelPrefixLength + index])
-            if let cgImage = CIImage(bitmapData: imageData[start..<end], bytesPerRow: 28, size: .init(width: 28, height: 28), format: .R8, colorSpace: .none).inverted.convertedCGImage?.grayscale {
-                let sample = DataSample(device: device, image: cgImage, label: label)
+            
+            if let cgImage = CIImage(bitmapData: imageData[start..<end], bytesPerRow: 28, size: .init(width: 28, height: 28), format: .R8, colorSpace: .init(name: CGColorSpace.linearGray)!).inverted.convertedCGImage {
+                let sample = DataSample(image: cgImage, label: label)
                 set.samples.append(sample)
             }
         }

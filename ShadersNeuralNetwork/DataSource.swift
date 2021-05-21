@@ -100,7 +100,7 @@ class ConvDataSource: NSObject, MPSCNNConvolutionDataSource {
         let vDescBiases = MPSVectorDescriptor(length: outputFeatureChannnels, dataType: .float32)
         let sizeBiases = outputFeatureChannnels * MemoryLayout<Float32>.size
         
-        var zero = Float.zero, biasInit = Float(0.1)
+        var zero = Float.zero, biasInit = Float.zero
         
         weightsVector = MPSVector(device: device, descriptor: vDescWeights)
         weightsVelocityVector = MPSVector(device: device, descriptor: vDescWeights)
@@ -127,7 +127,8 @@ class ConvDataSource: NSObject, MPSCNNConvolutionDataSource {
         
         let commandBuffer = MPSCommandBuffer(from: commandQueue)
         
-        let randomDescriptor = MPSMatrixRandomDistributionDescriptor.uniformDistributionDescriptor(withMinimum: -0.2, maximum: 0.2)
+        let limit = sqrt(6.0 / Float(inputFeatureChannels + outputFeatureChannnels))
+        let randomDescriptor = MPSMatrixRandomDistributionDescriptor.uniformDistributionDescriptor(withMinimum: -limit, maximum: limit)
         let randomKernel = MPSMatrixRandomMTGP32(device: device, destinationDataType: .float32, seed: 0, distributionDescriptor: randomDescriptor)
         randomKernel.encode(commandBuffer: commandBuffer, destinationVector: weightsVector)
         

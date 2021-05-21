@@ -9,46 +9,124 @@ import Foundation
 import MetalPerformanceShaders
 import CoreImage
 
-func performHiragana(learningRate: Float) {
+func performNPL(learningRate: Float, firstTime: Bool) {
+    let url = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+    let inputSize = 16
+    let text = try? String(contentsOf: url.appendingPathComponent("shakespeare.html"))
+    guard let text = text else {
+        fatalError()
+    }
+    var bytesArray = [[UInt8]]()
+    var labels = [Int]()
+    for i in inputSize-1..<text.count-1 {
+        let end = text.index(text.startIndex, offsetBy: i)
+        let start = text.index(end, offsetBy: 1-inputSize)
+        var bytes = [UInt8].init(repeating: .zero, count: inputSize)
+        var length = 0
+        var remaining = start..<text.index(after: end)
+        text.getBytes(&bytes, maxLength: inputSize, usedLength: &length, encoding: .unicode, range: start...end, remaining: &remaining)
+        bytesArray.append(bytes)
+        labels.append(Int(text[text.index(after: end)].asciiValue!))
+    }
+    autoreleasepool(invoking: {
+        
+        let set = Dataset(bytes: bytesArray, labels: labels, classLabels: (1...256).map { String($0) })
+        var trainSet = Dataset(), testSet = Dataset()
+        set.breakInto(trainSet: &trainSet, evaluationSet: &testSet, evaluationPart: 0.2)
+        try? trainSet.save(to: url.appendingPathComponent("textTrain.ds"))
+        try? testSet.save(to: url.appendingPathComponent("textTest.ds"))
+        //let trainSet = try? Dataset(from: url.appendingPathComponent("textTrain.ds"))
+        //let testSet = try? Dataset(from: url.appendingPathComponent("textTest.ds"))
+        //guard let trainSet = trainSet, let testSet = testSet else {
+        //    fatalError()
+        //}
+        if let device = MTLCreateSystemDefaultDevice() {
+            if let commandQueue = device.makeCommandQueue() {
+                var layers: [Layer] = [
+                    Dense(device: device, commandQueue: commandQueue, kernelSize: .init(width: inputSize, height: 1), inputFC: 1, outputFC: 32, stride: 1, learningRate: learningRate),
+                    Dense(device: device, commandQueue: commandQueue, kernelSize: .init(width: 1, height: 1), inputFC: 32, outputFC: 128, stride: 1, learningRate: learningRate),
+                    Dense(device: device, commandQueue: commandQueue, kernelSize: .init(width: 1, height: 1), inputFC: 128, outputFC: 1024, stride: 1, learningRate: learningRate),
+                    Dense(device: device, commandQueue: commandQueue, kernelSize: .init(width: 1, height: 1), inputFC: 1024, outputFC: 256, stride: 1, learningRate: learningRate)
+                ]
+                let network = NeuralNetwork(device: device, commandQueue: commandQueue, layers: &layers, epochs: 1, batchSize: 32, numberOfClasses: 256)
+                network.hi()
+                network.train(trainSet: trainSet, evaluationSet: testSet)
+                var input = "Shakespeare"
+                var res = input
+                let additionSize = 20
+                for _ in 0..<additionSize {
+                    var bytes = [UInt8].init(repeating: .zero, count: inputSize)
+                    var length = 0
+                    var remaining = input.startIndex..<input.endIndex
+                    input.getBytes(&bytes, maxLength: inputSize, usedLength: &length, encoding: .ascii, range: input.startIndex..<input.endIndex, remaining: &remaining)
+                    let sample = [
+                        DataSample(bytes: bytes, label: -1)
+                    ]
+                    let newChar = Character(Unicode.Scalar(network.predict(samples: sample).first!)!)
+                    input.removeFirst()
+                    input.append(newChar)
+                    res.append(newChar)
+                }
+                print(res)
+            }
+        }
+    })
+}
+
+func performHiragana(learningRate: Float, firstTime: Bool) {
     autoreleasepool(invoking: {
         if let device = MTLCreateSystemDefaultDevice() {
             if let commandQueue = device.makeCommandQueue() {
+                let url = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+                if firstTime {
+                    cook(device: device)
+                    let dataset = getDS()
+                    var trainSet = Dataset(), testSet = Dataset()
+                    dataset.breakInto(trainSet: &trainSet, evaluationSet: &testSet, evaluationPart: 0.2)
+                    do {
+                        try trainSet.save(to: url.appendingPathComponent("hiraganaTrain.ds"))
+                        try testSet.save(to: url.appendingPathComponent("hiraganaTest.ds"))
+                    } catch {
+                        fatalError("Error")
+                    }
+                }
                 
-                var dataset = getDS()
-                let sampleImage = CIImage(mtlTexture: dataset.samples[0].texture, options: [:])!
-                sampleImage.saveJPEG("hi.jpg")
-                dataset.updateImageSize()
-                var trainSet = Dataset(), testSet = Dataset()
-                dataset.breakInto(trainSet: &trainSet, evaluationSet: &testSet, evaluationPart: 0.2)
+                let trainSet = try? Dataset(from: url.appendingPathComponent("hiraganaTrain.ds"))
+                let testSet = try? Dataset(from: url.appendingPathComponent("hiraganaTest.ds"))
+                guard let trainSet = trainSet, let testSet = testSet else {
+                    return
+                }
+                
                 let padding = Padding.valid
                 
                 var layers: [Layer] = [
                     Convolution(device: device, commandQueue: commandQueue, kernelSize: .init(width: 3, height: 3), inputFC: 1, outputFC: 32, stride: 1, learningRate: learningRate, padding: padding),
                     ReLU(),
+                    Convolution(device: device, commandQueue: commandQueue, kernelSize: .init(width: 3, height: 3), inputFC: 32, outputFC: 32, stride: 1, learningRate: learningRate, padding: padding),
+                    ReLU(),
+                    Pooling(mode: .max, filterSize: 2, stride: 2, padding: padding),
+                    //Dropout(keepProbability: 0.1),
+                    
                     Convolution(device: device, commandQueue: commandQueue, kernelSize: .init(width: 3, height: 3), inputFC: 32, outputFC: 64, stride: 1, learningRate: learningRate, padding: padding),
                     ReLU(),
-                    Pooling(mode: .max, filterSize: 2, stride: 2, padding: padding),
-                    //Dropout(keepProbability: 0.5),
-                    
-                    Convolution(device: device, commandQueue: commandQueue, kernelSize: .init(width: 3, height: 3), inputFC: 64, outputFC: 64, stride: 1, learningRate: learningRate, padding: padding),
-                    ReLU(),
                     Convolution(device: device, commandQueue: commandQueue, kernelSize: .init(width: 3, height: 3), inputFC: 64, outputFC: 64, stride: 1, learningRate: learningRate, padding: padding),
                     ReLU(),
                     Pooling(mode: .max, filterSize: 2, stride: 2, padding: padding),
-                    //Dropout(keepProbability: 0.5),
+                    //Dropout(keepProbability: 0.1),
                     
                     Flatten(width: 1600),
                     
                     Dense(device: device, commandQueue: commandQueue, kernelSize: .init(width: 1, height: 1), inputFC: 1600, outputFC: 256, stride: 1, learningRate: learningRate),
                     ReLU(),
-                    //Dropout(keepProbability: 0.5),
+                    //Dropout(keepProbability: 0.1),
                     
-                    Dense(device: device, commandQueue: commandQueue, kernelSize: .init(width: 1, height: 1), inputFC: 256, outputFC: dataset.classLabels.count, stride: 1, learningRate: learningRate)
+                    Dense(device: device, commandQueue: commandQueue, kernelSize: .init(width: 1, height: 1), inputFC: 256, outputFC: 71, stride: 1, learningRate: learningRate)
                 ]
-                let network = NeuralNetwork(device: device, commandQueue: commandQueue, layers: &layers, epochs: 1, batchSize: 40, numberOfClasses: dataset.classLabels.count)
+                let sampleImage = CIImage(mtlTexture: trainSet.samples[0].texture!, options: [:])!
                 sampleImage.saveJPEG("hi.jpg")
+                let network = NeuralNetwork(device: device, commandQueue: commandQueue, layers: &layers, epochs: 10, batchSize: 128, numberOfClasses: 71)
                 network.hi()
-                network.getOutputSize(dataset: dataset)
+                //network.getOutputSize(dataset: trainSet)
                 network.train(trainSet: trainSet, evaluationSet: testSet)
             } else {
                 print("Unable to get command queue.")
@@ -59,39 +137,38 @@ func performHiragana(learningRate: Float) {
     })
 }
 
-func performMNIST(learningRate: Float) {
+func performMNIST(learningRate: Float, firstTime: Bool) {
     autoreleasepool(invoking: {
         if let device = MTLCreateSystemDefaultDevice() {
             if let commandQueue = device.makeCommandQueue() {
-                /*var trainSet = MNISTDataset(isTrain: true), testSet = MNISTDataset(isTrain: false)
-                do {
-                    try trainSet.load()
-                    try testSet.load()
-                    trainSet.fillSet(device: device)
-                    testSet.fillSet(device: device)
-                    try trainSet.set.save(to: URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("train.ds"))
-                    try testSet.set.save(to: URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("test.ds"))
-                } catch {
-                    
-                }*/
+                if firstTime {
+                    let trainSet = MNISTDataset(isTrain: true), testSet = MNISTDataset(isTrain: false)
+                    do {
+                        try trainSet.load()
+                        try testSet.load()
+                        trainSet.fillSet()
+                        testSet.fillSet()
+                        trainSet.set.updateImageSize()
+                        testSet.set.updateImageSize()
+                        
+                        for i in 0..<10 {
+                            trainSet.set.classLabels.append(String(i))
+                            testSet.set.classLabels.append(String(i))
+                        }
+                        try trainSet.set.save(to: URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("train.ds"))
+                        try testSet.set.save(to: URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("test.ds"))
+                    } catch {
+                        
+                    }
+                }
+                
                 let url = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
                 let trainSet = try? Dataset(from: url.appendingPathComponent("train.ds"))
                 let testSet = try? Dataset(from: url.appendingPathComponent("test.ds"))
-                guard var trainSet = trainSet, var testSet = testSet else {
+                
+                guard let trainSet = trainSet, let testSet = testSet else {
                     return
                 }
-                
-                //trainSet.updateImageSize()
-                //testSet.updateImageSize()
-                
-                //for i in 0..<10 {
-                    //trainSet.classLabels.append(String(i))
-                    //testSet.classLabels.append(String(i))
-                //}
-                
-                //try? trainSet.save(to: URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("train.ds"))
-                //try? testSet.save(to: URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("test.ds"))
-                
                 
                 var layers: [Layer] = [
                     Convolution(device: device, commandQueue: commandQueue, kernelSize: .init(width: 5, height: 5), inputFC: 1, outputFC: 32, stride: 1, learningRate: learningRate, padding: .same),
@@ -104,7 +181,8 @@ func performMNIST(learningRate: Float) {
                     ReLU(),
                     Dense(device: device, commandQueue: commandQueue, kernelSize: .init(width: 1, height: 1), inputFC: 1024, outputFC: 10, stride: 1, learningRate: learningRate)
                 ]
-                let sampleImage = CIImage(mtlTexture: trainSet.samples[0].texture, options: [:])!
+                
+                let sampleImage = CIImage(mtlTexture: trainSet.samples[0].texture!, options: [:])!
                 sampleImage.saveJPEG("hi.jpg")
                 let network = NeuralNetwork(device: device, commandQueue: commandQueue, layers: &layers, epochs: 1, batchSize: 40, numberOfClasses: 10)
                 network.hi()
