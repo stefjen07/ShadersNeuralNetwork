@@ -13,6 +13,7 @@
 		3E84E5DE264DCBD000F55082 /* DataSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E84E5DD264DCBD000F55082 /* DataSource.swift */; };
 		3E84E5E0264F0BDA00F55082 /* DatasetCooker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E84E5DF264F0BDA00F55082 /* DatasetCooker.swift */; };
 		3E8EB38F26553C3B0097D8E2 /* Performers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E8EB38E26553C3B0097D8E2 /* Performers.swift */; };
+		3E8EB391265966300097D8E2 /* TextPreparing.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E8EB390265966300097D8E2 /* TextPreparing.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -35,6 +36,7 @@
 		3E84E5DD264DCBD000F55082 /* DataSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataSource.swift; sourceTree = "<group>"; };
 		3E84E5DF264F0BDA00F55082 /* DatasetCooker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DatasetCooker.swift; sourceTree = "<group>"; };
 		3E8EB38E26553C3B0097D8E2 /* Performers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Performers.swift; sourceTree = "<group>"; };
+		3E8EB390265966300097D8E2 /* TextPreparing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextPreparing.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -68,6 +70,7 @@
 			isa = PBXGroup;
 			children = (
 				3E8EB38E26553C3B0097D8E2 /* Performers.swift */,
+				3E8EB390265966300097D8E2 /* TextPreparing.swift */,
 				3E84E5D6264B10D700F55082 /* main.swift */,
 				3E00BFAF2650805500FE4B32 /* Core.swift */,
 				3E00BFAD265078CE00FE4B32 /* Dataset.swift */,
@@ -137,6 +140,7 @@
 				3E8EB38F26553C3B0097D8E2 /* Performers.swift in Sources */,
 				3E84E5DE264DCBD000F55082 /* DataSource.swift in Sources */,
 				3E84E5E0264F0BDA00F55082 /* DatasetCooker.swift in Sources */,
+				3E8EB391265966300097D8E2 /* TextPreparing.swift in Sources */,
 				3E00BFAE265078CE00FE4B32 /* Dataset.swift in Sources */,
 				3E00BFB02650805500FE4B32 /* Core.swift in Sources */,
 				3E84E5D7264B10D700F55082 /* main.swift in Sources */,

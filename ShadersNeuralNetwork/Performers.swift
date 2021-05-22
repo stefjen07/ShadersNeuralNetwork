@@ -9,65 +9,64 @@ import Foundation
 import MetalPerformanceShaders
 import CoreImage
 
-func performNPL(learningRate: Float, firstTime: Bool) {
-    let url = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-    let inputSize = 16
-    let text = try? String(contentsOf: url.appendingPathComponent("shakespeare.html"))
-    guard let text = text else {
-        fatalError()
-    }
-    var bytesArray = [[UInt8]]()
-    var labels = [Int]()
-    for i in inputSize-1..<text.count-1 {
-        let end = text.index(text.startIndex, offsetBy: i)
-        let start = text.index(end, offsetBy: 1-inputSize)
-        var bytes = [UInt8].init(repeating: .zero, count: inputSize)
-        var length = 0
-        var remaining = start..<text.index(after: end)
-        text.getBytes(&bytes, maxLength: inputSize, usedLength: &length, encoding: .unicode, range: start...end, remaining: &remaining)
-        bytesArray.append(bytes)
-        labels.append(Int(text[text.index(after: end)].asciiValue!))
-    }
+func performNPL(learningRate: Float, firstTime: Bool, fromFile: Bool) {
     autoreleasepool(invoking: {
-        
-        let set = Dataset(bytes: bytesArray, labels: labels, classLabels: (1...256).map { String($0) })
-        var trainSet = Dataset(), testSet = Dataset()
-        set.breakInto(trainSet: &trainSet, evaluationSet: &testSet, evaluationPart: 0.2)
-        try? trainSet.save(to: url.appendingPathComponent("textTrain.ds"))
-        try? testSet.save(to: url.appendingPathComponent("textTest.ds"))
-        //let trainSet = try? Dataset(from: url.appendingPathComponent("textTrain.ds"))
-        //let testSet = try? Dataset(from: url.appendingPathComponent("textTest.ds"))
-        //guard let trainSet = trainSet, let testSet = testSet else {
-        //    fatalError()
-        //}
+        let url = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let inputSize = 15
+        if firstTime {
+            let text = try? String(contentsOf: url.appendingPathComponent("shakespeare.html"))
+            guard let text = text else {
+                fatalError()
+            }
+            let tokenizer = Tokenizer(text: text)
+            var set = tokenizer.getDataset(inputSize: inputSize)
+            set.optimize()
+            var trainSet = Dataset(), testSet = Dataset()
+            set.breakInto(trainSet: &trainSet, evaluationSet: &testSet, evaluationPart: 0.2)
+            try? trainSet.save(to: url.appendingPathComponent("textTrain.ds"))
+            try? testSet.save(to: url.appendingPathComponent("textTest.ds"))
+            try? tokenizer.save(to: url.appendingPathComponent("tokenizer.st"))
+        }
+        let trainSet = try? Dataset(from: url.appendingPathComponent("textTrain.ds"))
+        let testSet = try? Dataset(from: url.appendingPathComponent("textTest.ds"))
+        let tokenizer = try? Tokenizer(from: url.appendingPathComponent("tokenizer.st"))
+        guard let trainSet = trainSet, let testSet = testSet, let tokenizer = tokenizer else {
+            fatalError()
+        }
         if let device = MTLCreateSystemDefaultDevice() {
             if let commandQueue = device.makeCommandQueue() {
-                var layers: [Layer] = [
-                    Dense(device: device, commandQueue: commandQueue, kernelSize: .init(width: inputSize, height: 1), inputFC: 1, outputFC: 32, stride: 1, learningRate: learningRate),
-                    Dense(device: device, commandQueue: commandQueue, kernelSize: .init(width: 1, height: 1), inputFC: 32, outputFC: 128, stride: 1, learningRate: learningRate),
-                    Dense(device: device, commandQueue: commandQueue, kernelSize: .init(width: 1, height: 1), inputFC: 128, outputFC: 1024, stride: 1, learningRate: learningRate),
-                    Dense(device: device, commandQueue: commandQueue, kernelSize: .init(width: 1, height: 1), inputFC: 1024, outputFC: 256, stride: 1, learningRate: learningRate)
+                let layers: [Layer] = [
+                    Dense(device: device, commandQueue: commandQueue, kernelSize: .init(width: 1, height: 1), inputFC: 2*inputSize, outputFC: 128, stride: 1, learningRate: learningRate),
+                    ReLU(),
+                    Dense(device: device, commandQueue: commandQueue, kernelSize: .init(width: 1, height: 1), inputFC:128, outputFC: 512, stride: 1, learningRate: learningRate),
+                    ReLU(),
+                    Dense(device: device, commandQueue: commandQueue, kernelSize: .init(width: 1, height: 1), inputFC: 512, outputFC: 256, stride: 1, learningRate: learningRate)
                 ]
-                let network = NeuralNetwork(device: device, commandQueue: commandQueue, layers: layers, epochs: 1, batchSize: 32, numberOfClasses: 256)
+                var network = NeuralNetwork(device: device, commandQueue: commandQueue, layers: layers, epochs: 5, batchSize: 32, numberOfClasses: 256)
+                if fromFile {
+                    do {
+                        network = try NeuralNetwork(from: url.appendingPathComponent("npl.nnm"))
+                    } catch {
+                        
+                    }
+                }
                 network.hi()
                 network.train(trainSet: trainSet, evaluationSet: testSet)
-                var input = "Shakespeare"
-                var res = input
+                try? network.save(to: url.appendingPathComponent("npl.nnm"))
+                var input = "Romeo and Juliet is the Shakespeare's book. You should read it before writing neural networks. Romeo"
                 let additionSize = 20
                 for _ in 0..<additionSize {
-                    var bytes = [UInt8].init(repeating: .zero, count: inputSize)
-                    var length = 0
-                    var remaining = input.startIndex..<input.endIndex
-                    input.getBytes(&bytes, maxLength: inputSize, usedLength: &length, encoding: .ascii, range: input.startIndex..<input.endIndex, remaining: &remaining)
-                    let sample = [
-                        DataSample(bytes: bytes, label: -1)
-                    ]
-                    let newChar = Character(Unicode.Scalar(network.predict(samples: sample).first!)!)
-                    input.removeFirst()
-                    input.append(newChar)
-                    res.append(newChar)
+                    var parts = input.split(separator: " ")
+                    var inputArr: [String] = []
+                    for _ in 0..<inputSize {
+                        inputArr.append(String(parts.last!))
+                        parts.removeLast()
+                    }
+                    let sample = tokenizer.encodeSample(words: inputArr)
+                    let newWord = tokenizer.getWord(id: network.predict(samples: [sample]).first!)
+                    input =  "\(input) \(newWord)"
                 }
-                print(res)
+                print(input)
             }
         }
     })
@@ -99,7 +98,7 @@ func performHiragana(learningRate: Float, firstTime: Bool, fromFile: Bool) {
                 
                 let padding = Padding.valid
                 
-                var layers: [Layer] = [
+                let layers: [Layer] = [
                     Convolution(device: device, commandQueue: commandQueue, kernelSize: .init(width: 3, height: 3), inputFC: 1, outputFC: 32, stride: 1, learningRate: learningRate, padding: padding),
                     ReLU(),
                     Convolution(device: device, commandQueue: commandQueue, kernelSize: .init(width: 3, height: 3), inputFC: 32, outputFC: 32, stride: 1, learningRate: learningRate, padding: padding),
@@ -126,10 +125,13 @@ func performHiragana(learningRate: Float, firstTime: Bool, fromFile: Bool) {
                 sampleImage.saveJPEG("hi.jpg")
                 var network = NeuralNetwork(device: device, commandQueue: commandQueue, layers: layers, epochs: 1, batchSize: 128, numberOfClasses: 71)
                 if fromFile {
-                    network = try! NeuralNetwork(from: url.appendingPathComponent("hiragana.nnm"))
+                    do {
+                        network = try NeuralNetwork(from: url.appendingPathComponent("hiragana.nnm"))
+                    } catch {
+                        
+                    }
                 }
                 network.hi()
-                //network.getOutputSize(dataset: trainSet)
                 network.train(trainSet: trainSet, evaluationSet: testSet)
                 try? network.save(to: url.appendingPathComponent("hiragana.nnm"))
             } else {
@@ -141,7 +143,7 @@ func performHiragana(learningRate: Float, firstTime: Bool, fromFile: Bool) {
     })
 }
 
-func performMNIST(learningRate: Float, firstTime: Bool) {
+func performMNIST(learningRate: Float, firstTime: Bool, fromFile: Bool) {
     autoreleasepool(invoking: {
         if let device = MTLCreateSystemDefaultDevice() {
             if let commandQueue = device.makeCommandQueue() {
@@ -174,7 +176,7 @@ func performMNIST(learningRate: Float, firstTime: Bool) {
                     return
                 }
                 
-                var layers: [Layer] = [
+                let layers: [Layer] = [
                     Convolution(device: device, commandQueue: commandQueue, kernelSize: .init(width: 5, height: 5), inputFC: 1, outputFC: 32, stride: 1, learningRate: learningRate, padding: .same),
                     ReLU(),
                     Pooling(mode: .max, filterSize: 2, stride: 2, padding: .same),
@@ -188,9 +190,17 @@ func performMNIST(learningRate: Float, firstTime: Bool) {
                 
                 let sampleImage = CIImage(mtlTexture: trainSet.samples[0].texture!, options: [:])!
                 sampleImage.saveJPEG("hi.jpg")
-                let network = NeuralNetwork(device: device, commandQueue: commandQueue, layers: layers, epochs: 1, batchSize: 40, numberOfClasses: 10)
+                var network = NeuralNetwork(device: device, commandQueue: commandQueue, layers: layers, epochs: 1, batchSize: 40, numberOfClasses: 10)
+                if fromFile {
+                    do {
+                        network = try NeuralNetwork(from: url.appendingPathComponent("mnist.nnm"))
+                    } catch {
+                        
+                    }
+                }
                 network.hi()
                 network.train(trainSet: trainSet, evaluationSet: testSet)
+                try? network.save(to: url.appendingPathComponent("mnist.nnm"))
             } else {
                 print("Unable to get command queue.")
             }

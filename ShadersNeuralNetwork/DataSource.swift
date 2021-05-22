@@ -228,7 +228,7 @@ extension KeyedEncodingContainer {
 
 extension KeyedDecodingContainer {
     func decode(_ type: MTLBuffer.Type, forKey key: K) throws -> MTLBuffer {
-        var arr = try decode([Float].self, forKey: key)
+        let arr = try decode([Float].self, forKey: key)
         let length = arr.count * 4
         let device = MTLCreateSystemDefaultDevice()!
         let buffer = device.makeBuffer(bytes: arr, length: length, options: [])!

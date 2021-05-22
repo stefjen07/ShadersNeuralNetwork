@@ -365,7 +365,7 @@ struct NeuralNetwork: Codable {
         let commandQueue = device.makeCommandQueue()!
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let wrappers = try container.decode([LayerWrapper].self, forKey: .layers)
-        var layers = wrappers.map { $0.layer }
+        let layers = wrappers.map { $0.layer }
         let epochs = try container.decode(Int.self, forKey: .epochs)
         let batchSize = try container.decode(Int.self, forKey: .batchSize)
         let numberOfClasses = try container.decode(Int.self, forKey: .numberOfClasses)

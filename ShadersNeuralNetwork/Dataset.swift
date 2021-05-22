@@ -26,7 +26,7 @@ class DataSample: Codable {
             return MPSImage(texture: texture!, featureChannels: 1)
         } else {
             let bytes = bytes!
-            let descriptor = MPSImageDescriptor(channelFormat: .unorm8, width: bytes.count, height: 1, featureChannels: 1, numberOfImages: 1, usage: [.shaderRead, .shaderWrite])
+            let descriptor = MPSImageDescriptor(channelFormat: .unorm8, width: 1, height: 1, featureChannels: bytes.count, numberOfImages: 1, usage: [.shaderRead, .shaderWrite])
             let image = MPSImage(device: device, imageDescriptor: descriptor)
             image.writeBytes(bytes, dataLayout: .HeightxWidthxFeatureChannels, imageIndex: 0)
             return image
@@ -116,6 +116,26 @@ struct Dataset: Codable {
                 
             }
         }
+    }
+    
+    mutating func optimize() {
+        let samplesByClasses = Dictionary(grouping: samples, by: {
+            $0.label
+        })
+        var averageSize = 0
+        for i in 0..<classLabels.count {
+            if let count = samplesByClasses[i]?.count {
+                averageSize += count
+            }
+        }
+        averageSize /= classLabels.count
+        var newSamples = [DataSample]()
+        for i in 0..<classLabels.count {
+            if let classSamples = samplesByClasses[i] {
+                newSamples.append(contentsOf: classSamples.dropFirst(averageSize))
+            }
+        }
+        samples = newSamples
     }
     
     mutating func updateImageSize() {
