@@ -48,7 +48,7 @@ func performNPL(learningRate: Float, firstTime: Bool) {
                     Dense(device: device, commandQueue: commandQueue, kernelSize: .init(width: 1, height: 1), inputFC: 128, outputFC: 1024, stride: 1, learningRate: learningRate),
                     Dense(device: device, commandQueue: commandQueue, kernelSize: .init(width: 1, height: 1), inputFC: 1024, outputFC: 256, stride: 1, learningRate: learningRate)
                 ]
-                let network = NeuralNetwork(device: device, commandQueue: commandQueue, layers: &layers, epochs: 1, batchSize: 32, numberOfClasses: 256)
+                let network = NeuralNetwork(device: device, commandQueue: commandQueue, layers: layers, epochs: 1, batchSize: 32, numberOfClasses: 256)
                 network.hi()
                 network.train(trainSet: trainSet, evaluationSet: testSet)
                 var input = "Shakespeare"
@@ -73,7 +73,7 @@ func performNPL(learningRate: Float, firstTime: Bool) {
     })
 }
 
-func performHiragana(learningRate: Float, firstTime: Bool) {
+func performHiragana(learningRate: Float, firstTime: Bool, fromFile: Bool) {
     autoreleasepool(invoking: {
         if let device = MTLCreateSystemDefaultDevice() {
             if let commandQueue = device.makeCommandQueue() {
@@ -124,10 +124,14 @@ func performHiragana(learningRate: Float, firstTime: Bool) {
                 ]
                 let sampleImage = CIImage(mtlTexture: trainSet.samples[0].texture!, options: [:])!
                 sampleImage.saveJPEG("hi.jpg")
-                let network = NeuralNetwork(device: device, commandQueue: commandQueue, layers: &layers, epochs: 10, batchSize: 128, numberOfClasses: 71)
+                var network = NeuralNetwork(device: device, commandQueue: commandQueue, layers: layers, epochs: 1, batchSize: 128, numberOfClasses: 71)
+                if fromFile {
+                    network = try! NeuralNetwork(from: url.appendingPathComponent("hiragana.nnm"))
+                }
                 network.hi()
                 //network.getOutputSize(dataset: trainSet)
                 network.train(trainSet: trainSet, evaluationSet: testSet)
+                try? network.save(to: url.appendingPathComponent("hiragana.nnm"))
             } else {
                 print("Unable to get command queue.")
             }
@@ -184,7 +188,7 @@ func performMNIST(learningRate: Float, firstTime: Bool) {
                 
                 let sampleImage = CIImage(mtlTexture: trainSet.samples[0].texture!, options: [:])!
                 sampleImage.saveJPEG("hi.jpg")
-                let network = NeuralNetwork(device: device, commandQueue: commandQueue, layers: &layers, epochs: 1, batchSize: 40, numberOfClasses: 10)
+                let network = NeuralNetwork(device: device, commandQueue: commandQueue, layers: layers, epochs: 1, batchSize: 40, numberOfClasses: 10)
                 network.hi()
                 network.train(trainSet: trainSet, evaluationSet: testSet)
             } else {
@@ -195,3 +199,27 @@ func performMNIST(learningRate: Float, firstTime: Bool) {
         }
     })
 }
+
+extension CIImage {
+
+    func saveJPEG(_ name:String, inDirectoryURL:URL? = nil, quality:CGFloat = 1.0) {
+        var destinationURL = inDirectoryURL
+        
+        if destinationURL == nil {
+            destinationURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        }
+        
+        if var destinationURL = destinationURL {
+            destinationURL = destinationURL.appendingPathComponent(name)
+            if let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) {
+                do {
+                    let context = CIContext()
+                    try context.writeJPEGRepresentation(of: self, to: destinationURL, colorSpace: colorSpace, options: [kCGImageDestinationLossyCompressionQuality as CIImageRepresentationOption : quality])
+                } catch {
+                    
+                }
+            }
+        }
+    }
+}
+
