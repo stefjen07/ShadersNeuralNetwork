@@ -10,29 +10,32 @@ import MetalPerformanceShaders
 import CoreImage
 
 func cook(device: MTLDevice) {
-    let currentUrl = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-    var dataset = Dataset(device: device, folderUrl: currentUrl.appendingPathComponent("Set"), imageSize: CGSize(width: 32, height: 32))
+    var dataset = Dataset(
+        device: device, 
+        folderUrl: URL.currentDirectoryURL.appendingPathComponent("Set"),
+        imageSize: CGSize(width: 32, height: 32)
+    )
     dataset.updateImageSize()
+    
     do {
-        try dataset.save(to: currentUrl.appendingPathComponent("set.ds"))
+        try dataset.save(to: URL.currentDirectoryURL.appendingPathComponent("set.ds"))
     } catch {
-        fatalError("Error")
+        print(error.localizedDescription)
     }
 }
 
 func getDS() -> Dataset {
-    let currentUrl = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
     do {
-        return try Dataset(from: currentUrl.appendingPathComponent("set.ds"))
+        return try Dataset(from: URL.currentDirectoryURL.appendingPathComponent("set.ds"))
     } catch {
-        
+        print(error.localizedDescription)
     }
     return Dataset()
 }
 
-class MNISTDataset {
+class MNISTDataset: NSObject {
     var set: Dataset = .init()
-    private static let baseURL = "http://yann.lecun.com/exdb/mnist/"
+    private static let baseURL = "https://raw.githubusercontent.com/fgnt/mnist/master/"
     private static let names = ["train-images-idx3-ubyte", "train-labels-idx1-ubyte" , "t10k-images-idx3-ubyte", "t10k-labels-idx1-ubyte"]
     let imagePrefixLength = 16
     let labelPrefixLength = 8
@@ -41,14 +44,10 @@ class MNISTDataset {
         self.isTrain = isTrain
     }
     
-    func dataPath(with name: String) -> String {
-        return FileManager.default.currentDirectoryPath + "/" + name
-    }
-    
-    private func downloadFile(name: String, completion: @escaping (Data)->Void) throws {
-        let path = dataPath(with: name)
+    private func downloadFile(name: String, completion: @escaping (Data?)->Void) throws {
+        let path = URL.currentDirectoryURL.appendingPathComponent(name).path
         if FileManager.default.fileExists(atPath: path) {
-            let data =  try Data(contentsOf: URL(fileURLWithPath: path))
+            let data = try Data(contentsOf: URL(fileURLWithPath: path))
             completion(data)
         } else {
             let url = URL(string: "\(Self.baseURL)\(name).gz")!
@@ -62,10 +61,10 @@ class MNISTDataset {
                     let data =  try! Data(contentsOf: URL(fileURLWithPath: path))
                     completion(data)
                 } else {
-                    print("Error:\(error)")
+                    print(error?.localizedDescription ?? "")
+                    completion(nil)
                 }
             }.resume()
-            
         }
     }
     
@@ -73,23 +72,24 @@ class MNISTDataset {
     var labelData: Data!
     
     func load() throws {
-        let imageIndex = isTrain ? 0 : 2
-        let labelIndex = isTrain ? 1 : 3
-        let imageFileName = Self.names[imageIndex]
-        let labelFileName = Self.names[labelIndex]
+        let imageFileName = Self.names[isTrain ? 0 : 2]
+        let labelFileName = Self.names[isTrain ? 1 : 3]
         let group = DispatchGroup()
         group.enter()
         try downloadFile(name: imageFileName) { [weak self] (data) in
             self?.imageData = data
             group.leave()
         }
-        group.wait()
         group.enter()
-        try downloadFile(name: labelFileName, completion: { [weak self] data in
+        try downloadFile(name: labelFileName) { [weak self] data in
             self?.labelData = data
             group.leave()
-        })
+        }
         group.wait()
+        
+        if imageData == nil || labelData == nil {
+            fatalError("Unable to download MNIST dataset")
+        }
     }
     
     var count: Int {
@@ -99,16 +99,32 @@ class MNISTDataset {
     func fillSet() {
         var start = 0
         var end = 0
-        for index in 0..<count {
+        
+        let dummySample = DataSample(bytes: [], label: 0)
+        set.samples = Array(repeating: dummySample, count: count)
+        
+        DispatchQueue.concurrentPerform(iterations: count, execute: { index in
             start = imagePrefixLength + index * 28 * 28
             end = start + 28*28
             let label = Int(labelData[labelPrefixLength + index])
             
-            if let cgImage = CIImage(bitmapData: imageData[start..<end], bytesPerRow: 28, size: .init(width: 28, height: 28), format: .R8, colorSpace: .init(name: CGColorSpace.linearGray)!).inverted.convertedCGImage {
-                let sample = DataSample(image: cgImage, label: label)
-                set.samples.append(sample)
+            var data = Data(self.imageData[start..<end].map { 255 - $0 })
+            data.withUnsafeMutableBytes {
+                let context = CGContext(
+                    data: $0.baseAddress,
+                    width: 28,
+                    height: 28,
+                    bitsPerComponent: 8,
+                    bytesPerRow: 28,
+                    space: CGColorSpaceCreateDeviceGray(),
+                    bitmapInfo: 0
+                )
+                
+                if let image = context?.makeImage() {
+                    set.samples[index] = DataSample(image: image, label: label)
+                }
             }
-        }
+        })
     }
 }
 

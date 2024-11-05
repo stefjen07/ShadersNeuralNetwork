@@ -7,12 +7,19 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		39C670F22CDA965500F170E3 /* URL+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39C670F12CDA965500F170E3 /* URL+Extensions.swift */; };
+		39C670F42CDA982C00F170E3 /* CIImage+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39C670F32CDA982C00F170E3 /* CIImage+Extensions.swift */; };
+		39C670F72CDA984F00F170E3 /* BasePerformer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39C670F62CDA984F00F170E3 /* BasePerformer.swift */; };
+		39C670F92CDA986000F170E3 /* MNISTPerformer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39C670F82CDA986000F170E3 /* MNISTPerformer.swift */; };
+		39C670FD2CDAA87100F170E3 /* HiraganaPerformer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39C670FC2CDAA87100F170E3 /* HiraganaPerformer.swift */; };
+		39C670FF2CDAB89A00F170E3 /* NLPPerformer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39C670FE2CDAB89A00F170E3 /* NLPPerformer.swift */; };
+		39C671012CDABDDE00F170E3 /* CGImage+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39C671002CDABDDE00F170E3 /* CGImage+Extensions.swift */; };
+		39C671032CDABE1C00F170E3 /* NeuralNetwork.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39C671022CDABE1C00F170E3 /* NeuralNetwork.swift */; };
 		3E00BFAE265078CE00FE4B32 /* Dataset.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E00BFAD265078CE00FE4B32 /* Dataset.swift */; };
 		3E00BFB02650805500FE4B32 /* Core.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E00BFAF2650805500FE4B32 /* Core.swift */; };
 		3E84E5D7264B10D700F55082 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E84E5D6264B10D700F55082 /* main.swift */; };
 		3E84E5DE264DCBD000F55082 /* DataSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E84E5DD264DCBD000F55082 /* DataSource.swift */; };
 		3E84E5E0264F0BDA00F55082 /* DatasetCooker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E84E5DF264F0BDA00F55082 /* DatasetCooker.swift */; };
-		3E8EB38F26553C3B0097D8E2 /* Performers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E8EB38E26553C3B0097D8E2 /* Performers.swift */; };
 		3E8EB391265966300097D8E2 /* TextPreparing.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E8EB390265966300097D8E2 /* TextPreparing.swift */; };
 /* End PBXBuildFile section */
 
@@ -29,13 +36,20 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		39C670F12CDA965500F170E3 /* URL+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "URL+Extensions.swift"; sourceTree = "<group>"; };
+		39C670F32CDA982C00F170E3 /* CIImage+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CIImage+Extensions.swift"; sourceTree = "<group>"; };
+		39C670F62CDA984F00F170E3 /* BasePerformer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BasePerformer.swift; sourceTree = "<group>"; };
+		39C670F82CDA986000F170E3 /* MNISTPerformer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MNISTPerformer.swift; sourceTree = "<group>"; };
+		39C670FC2CDAA87100F170E3 /* HiraganaPerformer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HiraganaPerformer.swift; sourceTree = "<group>"; };
+		39C670FE2CDAB89A00F170E3 /* NLPPerformer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NLPPerformer.swift; sourceTree = "<group>"; };
+		39C671002CDABDDE00F170E3 /* CGImage+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CGImage+Extensions.swift"; sourceTree = "<group>"; };
+		39C671022CDABE1C00F170E3 /* NeuralNetwork.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NeuralNetwork.swift; sourceTree = "<group>"; };
 		3E00BFAD265078CE00FE4B32 /* Dataset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Dataset.swift; sourceTree = "<group>"; };
 		3E00BFAF2650805500FE4B32 /* Core.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Core.swift; sourceTree = "<group>"; };
 		3E84E5D3264B10D700F55082 /* GPUNN */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = GPUNN; sourceTree = BUILT_PRODUCTS_DIR; };
 		3E84E5D6264B10D700F55082 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		3E84E5DD264DCBD000F55082 /* DataSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataSource.swift; sourceTree = "<group>"; };
 		3E84E5DF264F0BDA00F55082 /* DatasetCooker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DatasetCooker.swift; sourceTree = "<group>"; };
-		3E8EB38E26553C3B0097D8E2 /* Performers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Performers.swift; sourceTree = "<group>"; };
 		3E8EB390265966300097D8E2 /* TextPreparing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextPreparing.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -50,6 +64,27 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		39C670F02CDA964C00F170E3 /* Extensions */ = {
+			isa = PBXGroup;
+			children = (
+				39C670F12CDA965500F170E3 /* URL+Extensions.swift */,
+				39C670F32CDA982C00F170E3 /* CIImage+Extensions.swift */,
+				39C671002CDABDDE00F170E3 /* CGImage+Extensions.swift */,
+			);
+			path = Extensions;
+			sourceTree = "<group>";
+		};
+		39C670F52CDA984100F170E3 /* Performers */ = {
+			isa = PBXGroup;
+			children = (
+				39C670F62CDA984F00F170E3 /* BasePerformer.swift */,
+				39C670F82CDA986000F170E3 /* MNISTPerformer.swift */,
+				39C670FC2CDAA87100F170E3 /* HiraganaPerformer.swift */,
+				39C670FE2CDAB89A00F170E3 /* NLPPerformer.swift */,
+			);
+			path = Performers;
+			sourceTree = "<group>";
+		};
 		3E84E5CA264B10D700F55082 = {
 			isa = PBXGroup;
 			children = (
@@ -69,13 +104,15 @@
 		3E84E5D5264B10D700F55082 /* ShadersNeuralNetwork */ = {
 			isa = PBXGroup;
 			children = (
-				3E8EB38E26553C3B0097D8E2 /* Performers.swift */,
+				39C670F52CDA984100F170E3 /* Performers */,
+				39C670F02CDA964C00F170E3 /* Extensions */,
 				3E8EB390265966300097D8E2 /* TextPreparing.swift */,
 				3E84E5D6264B10D700F55082 /* main.swift */,
 				3E00BFAF2650805500FE4B32 /* Core.swift */,
 				3E00BFAD265078CE00FE4B32 /* Dataset.swift */,
 				3E84E5DF264F0BDA00F55082 /* DatasetCooker.swift */,
 				3E84E5DD264DCBD000F55082 /* DataSource.swift */,
+				39C671022CDABE1C00F170E3 /* NeuralNetwork.swift */,
 			);
 			path = ShadersNeuralNetwork;
 			sourceTree = "<group>";
@@ -137,11 +174,18 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				3E8EB38F26553C3B0097D8E2 /* Performers.swift in Sources */,
 				3E84E5DE264DCBD000F55082 /* DataSource.swift in Sources */,
 				3E84E5E0264F0BDA00F55082 /* DatasetCooker.swift in Sources */,
+				39C670FD2CDAA87100F170E3 /* HiraganaPerformer.swift in Sources */,
+				39C670F42CDA982C00F170E3 /* CIImage+Extensions.swift in Sources */,
+				39C671032CDABE1C00F170E3 /* NeuralNetwork.swift in Sources */,
+				39C670F72CDA984F00F170E3 /* BasePerformer.swift in Sources */,
+				39C670FF2CDAB89A00F170E3 /* NLPPerformer.swift in Sources */,
 				3E8EB391265966300097D8E2 /* TextPreparing.swift in Sources */,
+				39C670F92CDA986000F170E3 /* MNISTPerformer.swift in Sources */,
+				39C671012CDABDDE00F170E3 /* CGImage+Extensions.swift in Sources */,
 				3E00BFAE265078CE00FE4B32 /* Dataset.swift in Sources */,
+				39C670F22CDA965500F170E3 /* URL+Extensions.swift in Sources */,
 				3E00BFB02650805500FE4B32 /* Core.swift in Sources */,
 				3E84E5D7264B10D700F55082 /* main.swift in Sources */,
 			);

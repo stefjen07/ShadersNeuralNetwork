@@ -189,17 +189,7 @@ struct Dataset: Codable {
                     for file in subfolderContents {
                         let fileUrl = URL(fileURLWithPath: subfolderPath).appendingPathComponent(file)
                         if let cgImage = CIImage(contentsOf: fileUrl)?.inverted.convertedCGImage {
-                            var data = [UInt8].init(repeating: 0, count: Int(imageSize.width * imageSize.height))
-                            let context = CGContext(data: &data,
-                                                            width: Int(imageSize.width),
-                                                            height: Int(imageSize.height),
-                                                            bitsPerComponent: 8,
-                                                            bytesPerRow: Int(imageSize.width),
-                                                            space: .init(name: CGColorSpace.linearGray)!,
-                                                            bitmapInfo: CGImageAlphaInfo.none.rawValue)!
-                            context.draw(cgImage, in: CGRect(x: 0, y: 0, width: imageSize.width, height: imageSize.height))
-                            let ciImage = CIImage(bitmapData: Data(bytes: &data, count: Int(imageSize.width * imageSize.height)), bytesPerRow: Int(imageSize.width), size: imageSize, format: .R8, colorSpace: .init(name: CGColorSpace.linearGray)!)
-                            let sample = DataSample(image: (ciImage.convertedCGImage?.grayscale(size: imageSize))!, label: currentLabel)
+                            let sample = DataSample(image: cgImage.grayscale(size: imageSize), label: currentLabel)
                             samples.append(sample)
                         }
                     }

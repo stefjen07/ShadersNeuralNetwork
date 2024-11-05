@@ -11,19 +11,23 @@ import CoreImage
 
 fileprivate let learningRate: Float = 1e-4
 
-enum Classifier {
-    case npl
+enum Classifier: String {
+    case nlp
     case hiragana
     case mnist
+    
+    var performer: BasePerformer {
+        switch self {
+        case .nlp:
+            NLPPerformer(learningRate: learningRate)
+        case .hiragana:
+            HiraganaPerformer(learningRate: learningRate)
+        case .mnist:
+            MNISTPerformer(learningRate: learningRate)
+        }
+    }
 }
 
-let classifier: Classifier = .npl
-
-switch classifier {
-case .hiragana:
-    performHiragana(learningRate: learningRate, firstTime: false, fromFile: true)
-case .mnist:
-    performMNIST(learningRate: learningRate, firstTime: false, fromFile: false)
-case .npl:
-    performNPL(learningRate: learningRate, firstTime: true, fromFile: false)
+if let rawValue = ProcessInfo.processInfo.environment["classifier"] {
+    Classifier(rawValue: rawValue)?.performer.perform()
 }
